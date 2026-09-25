@@ -1,5 +1,5 @@
 import { db } from "../../../db";
-import { students, grades, evaluations, subjects, homeworks, postits, lessons, rooms, teachers } from "../../../db/schema";
+import { students, grades, evaluations, subjects, homeworks, postits, lessons, rooms, teachers, homeworkSubmissions } from "../../../db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import type { RpcContext } from "../../types";
 import { getCurrentPeriodKey, toPronoteDateFormat } from "../../../helpers/date";
@@ -114,7 +114,7 @@ export const handleStudentHomepage = async (_body: any, ctx: RpcContext) => {
         let serviceOrder = 12;
         const servicesMap: Record<string, number> = {};
 
-        transformedHomeworks = homeworkRows.map((hw, index) => {
+        transformedHomeworks = await Promise.all(homeworkRows.map(async (hw, index) => {
             if (!servicesMap[hw.subjectName]) {
                 servicesMap[hw.subjectName] = serviceOrder++;
             }
@@ -122,6 +122,16 @@ export const handleStudentHomepage = async (_body: any, ctx: RpcContext) => {
             const rawDesc = hw.description ?? hw.title;
             const htmlDesc = `<div>${rawDesc.replace(/\n/g, "<br/>")}</div>`;
 
+            // Check if the student has marked this homework as done
+            const submission = await db.query.homeworkSubmissions.findFirst({
+                where: and(
+                    eq(homeworkSubmissions.homeworkId, hw.id),
+                    eq(homeworkSubmissions.studentId, studentId)
+                ),
+            });
+
+            const isDone = submission ? submission.isDone : false;
+            
             return {
                 G: 0,
                 ordre: index + 1,
@@ -146,8 +156,8 @@ export const handleStudentHomepage = async (_body: any, ctx: RpcContext) => {
                         N: `8200${servicesMap[hw.subjectName]}`,
                     },
                 },
-                N: `1500${index + 2}`,
-                TAFFait: hw.isLocked,
+                N: `${hw.id}`,
+                TAFFait: Boolean(isDone),
                 avecRendu: false,
                 peuRendre: false,
                 descriptif: {
@@ -157,7 +167,7 @@ export const handleStudentHomepage = async (_body: any, ctx: RpcContext) => {
                 duree: 0,
                 niveauDifficulte: 0,
             };
-        });
+        }));
     }
 
     const postitData = await db.query.postits.findFirst({
